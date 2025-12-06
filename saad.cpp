@@ -83,11 +83,6 @@ struct InvNode {
         : name(n), description(d), quantity(q), prev(NULL), next(NULL) {}
 };
 
-struct ItemProb {
-    string name;
-    double probability; // percentage (e.g. 19 = 19%)
-};
-
 class Inventory {
 private:
     InvNode* head;
@@ -511,30 +506,148 @@ private:
         addEdge(BRIDGE, SAFE_ZONE);
     }
 
-    void addItem(Location loc, const string& name, double prob) {
-        itemTable[loc].push_back({name, prob});
-    }
+    // Inside MapGraph:
 
-    void initItemProbabilities() {
-        // HOME
-        addItem(HOME, "Bread", 19);
-        addItem(HOME, "Pills", 10);
-        addItem(HOME, "Apple", 10);
-        addItem(HOME, "User ID", 10);
-        addItem(HOME, "Car Keys", 1);
+void addItem(Location loc, const string& name, double prob) {
+    itemTable[loc].push_back({name, prob});
+}
 
-        // SCHOOL (for Backpack)
-        addItem(SCHOOL, "Backpack", 30);
+void initItemProbabilities() {
+    // ---------- HOME ----------
+    // - 1 Bread = 19%
+    // - 1 Pills = 10%
+    // - 2 Apples = 10% (group)
+    // - User ID = 10%
+    // - Car Keys = 1%
+    addItem(HOME, "Bread",   19);
+    addItem(HOME, "Pills",   10);
+    addItem(HOME, "Apple",   10);   // represents the apple group
+    addItem(HOME, "User ID", 10);
+    addItem(HOME, "Car Keys", 1);
+    // Sum = 50% → Nothing = 50%
 
-        // TOWN HALL
-        addItem(TOWN_HALL, "Coin", 20);
-        addItem(TOWN_HALL, "Bread", 10);
+    // ---------- PETROL STATION ----------
+    // - 5 Petrol = 12%
+    // - 2 Clothes = 20%
+    addItem(PETROL_STATION, "Petrol", 12);
+    addItem(PETROL_STATION, "Cloth",  20);
+    // Sum = 32% → Nothing = 68%
 
-        // LAB
-        addItem(LAB, "PIN", 60);
+    // ---------- PARK ----------
+    // - 3 Apples = 10%
+    // - 1 Energy Drink = 5%
+    // - 3 Coins = 15%
+    // - 2 Twigs = 10%
+    addItem(PARK, "Apple",        10);
+    addItem(PARK, "Energy Drink", 5);
+    addItem(PARK, "Coin",         15);
+    addItem(PARK, "Twig",         10);
+    // Sum = 40% → Nothing = 60%
 
-        // You can fill rest from your document...
-    }
+    // ---------- BUS STOP ----------
+    // - 4 Coins = 10%
+    // - 3 Pebbles = 15%
+    addItem(BUS_STOP, "Coin",   10);
+    addItem(BUS_STOP, "Pebble", 15);
+    // Sum = 25% → Nothing = 75%
+
+    // ---------- OFFICE ----------
+    // - 2 Pills = 10%
+    // - 1 User ID = 35%
+    // - 3 Junk = 15%
+    addItem(OFFICE, "Pills",   10);
+    addItem(OFFICE, "User ID", 35);
+    addItem(OFFICE, "Junk",    15);
+    // Sum = 60% → Nothing = 40%
+
+    // ---------- STORE ----------
+    // - 1 Bread = 10%
+    // - 2 Apples = 10%
+    // - 2 Energy Drinks = 10%
+    // - 1 Axe = 35%
+    // - 3 Junk = 5%
+    addItem(STORE, "Bread",        10);
+    addItem(STORE, "Apple",        10);
+    addItem(STORE, "Energy Drink", 10);
+    addItem(STORE, "Axe",          35);
+    addItem(STORE, "Junk",         5);
+    // Sum = 70% → Nothing = 30%
+
+    // ---------- SCHOOL ----------
+    // - 2 Apples  = 5%
+    // - 1 Backpack = 30%
+    // - 4 Junk = 5%
+    // - 1 Book = 15%
+    addItem(SCHOOL, "Apple",    5);
+    addItem(SCHOOL, "Backpack", 30);
+    addItem(SCHOOL, "Junk",     5);
+    addItem(SCHOOL, "Book",     15);
+    // Sum = 55% → Nothing = 45%
+
+    // ---------- TOWN HALL ----------
+    // - 4 Coins = 5%
+    // - 1 Bread = 10%
+    // - 1 Cloth = 10%
+    // - 4 Pebbles = 15%
+    addItem(TOWN_HALL, "Coin",   5);
+    addItem(TOWN_HALL, "Bread",  10);
+    addItem(TOWN_HALL, "Cloth",  10);
+    addItem(TOWN_HALL, "Pebble", 15);
+    // Sum = 45% → Nothing = 55%
+
+    // ---------- CAFE ----------
+    // - 3 Energy Drinks = 20%
+    // - 1 Bread = 15%
+    // - 4 Coins = 5%
+    addItem(CAFE, "Energy Drink", 20);
+    addItem(CAFE, "Bread",        15);
+    addItem(CAFE, "Coin",         5);
+    // Sum = 40% → Nothing = 60%
+
+    // ---------- POLICE STATION ----------
+    // - 1 Gun = 50% (with 1 ammo)
+    // - 4 Ammo = 10%
+    // - 2 Energy Drinks = 10%
+    addItem(POLICE_STATION, "Gun",          50);
+    addItem(POLICE_STATION, "Ammo",         10);
+    addItem(POLICE_STATION, "Energy Drink", 10);
+    // Sum = 70% → Nothing = 30%
+
+    // ---------- HOSPITAL ----------
+    // - 2 Apples  = 15%
+    // - 2 Clothes = 15%
+    // - 3 First Aid = 20%
+    addItem(HOSPITAL, "Apple",     15);
+    addItem(HOSPITAL, "Cloth",     15);
+    addItem(HOSPITAL, "First Aid", 20);
+    // Sum = 50% → Nothing = 50%
+
+    // ---------- LAB ----------
+    // - 1 PIN = 60%
+    // - 2 Ammo = 5%
+    // - 1 First Aid = 10%
+    // - 2 Pebbles  = 10%
+    addItem(LAB, "PIN",       60);
+    addItem(LAB, "Ammo",      5);
+    addItem(LAB, "First Aid", 10);
+    addItem(LAB, "Pebble",    10);
+    // Sum = 85% → Nothing = 15%
+
+    // ---------- BRIDGE ----------
+    // - 5 Pebbles = 10%
+    // - 5 Twigs = 10%
+    // - 3 Ammo = 5%
+    // - 1 First Aid = 20%
+    addItem(BRIDGE, "Pebble",    10);
+    addItem(BRIDGE, "Twig",      10);
+    addItem(BRIDGE, "Ammo",      5);
+    addItem(BRIDGE, "First Aid", 20);
+    // Sum = 45% → Nothing = 55%
+
+    // ---------- SAFE ZONE ----------
+    // Usually no scavenging here → Nothing = 100%
+    // So we simply don't add any items for SAFE_ZONE.
+}
 };
 
 // =====================================================
