@@ -57,6 +57,8 @@ struct Player {
     Location currentLocation;
     int timeMinutes;     // total time passed
     int stamina;         // 0–100
+    int energyEffectMinutesLeft;
+
 };
 
 // =====================================================
@@ -333,7 +335,8 @@ public:
                 if (temp->quantity > remaining) {
                     temp->quantity -= remaining;
                     remaining = 0;
-                } else {
+                }
+                else {
                     remaining -= temp->quantity;
                     InvNode* toDelete = temp;
                     temp = temp->next;
@@ -716,7 +719,7 @@ public:
     // ----- COMBAT HELPERS -----
     int countHordesAt(Location loc) {
         int c = 0;
-        for (auto &h : hordes) {
+        for (auto& h : hordes) {
             if (h.currentLocation == loc) c++;
         }
         return c;
@@ -804,6 +807,44 @@ void useJunkAtCurrentNode(Player& player, Inventory& inv, ZombieSystem& zsys) {
     }
 }
 
+// Energy Drink:
+//  - +50 stamina (max 100)
+//  - If used again while energyEffectMinutesLeft > 0 -> overdose chance
+//  - Here we assume 50% overdose => death (you can change the percentage)
+void useEnergyDrink(Player& player, Inventory& inv, bool& playerAlive) {
+    if (!inv.consumeOne("Energy Drink")) {
+        cout << "[Energy Drink] You don't have any Energy Drink.\n";
+        return;
+    }
+
+    bool overdoseRisk = (player.energyEffectMinutesLeft > 0);
+
+    // Apply stamina boost
+    player.stamina += 50;
+    if (player.stamina > 100) player.stamina = 100;
+
+    // Refresh duration: e.g. 120 minutes (2 hours) of "buff window"
+    player.energyEffectMinutesLeft = 120;
+
+    cout << "[Energy Drink] You chug an Energy Drink. Stamina is now "
+        << player.stamina << ".\n";
+
+    if (overdoseRisk) {
+        int roll = rand() % 100; // 0–99
+        cout << "[Energy Drink] You used another drink while one is still active...\n";
+        cout << "Rolling for overdose (50% chance)...\n";
+
+        if (roll < 50) { // 50% overdose chance
+            cout << ">>> OVERDOSE! Your heart races uncontrollably...\n";
+            cout << "    You collapse and die.\n";
+            playerAlive = false;
+        }
+        else {
+            cout << ">>> You feel dizzy and shaky, but you survive... this time.\n";
+        }
+    }
+}
+
 // =====================================================
 //                 PLAYER ACTIONS
 // =====================================================
@@ -843,13 +884,19 @@ void playerMove(MapGraph& map, Player& player, MoveLog& log,
     bool ok = map.movePlayer(player, options[choice - 1], log);
     if (ok) {
         advanceZombies(zsys, zombieMinuteBuffer, 60); // 1 hour for zombies
+
+        if (player.energyEffectMinutesLeft > 0) {
+            player.energyEffectMinutesLeft -= 60;
+            if (player.energyEffectMinutesLeft < 0)
+                player.energyEffectMinutesLeft = 0;
+        }
     }
 }
 
 // Scavenge: costs 30 minutes, random item / nothing,
 // inventory rules: if full → Swap or Leave
 void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
-                    ZombieSystem& zsys, int& zombieMinuteBuffer) {
+    ZombieSystem& zsys, int& zombieMinuteBuffer) {
     cout << "\n[Scavenge] You search the area at "
         << locationToString(player.currentLocation) << "...\n";
 
@@ -857,8 +904,14 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
     cout << "Time +30 minutes. Total time: " << player.timeMinutes
         << " minutes | Stamina: " << player.stamina << "\n";
 
-
     advanceZombies(zsys, zombieMinuteBuffer, 30);
+
+    if (player.energyEffectMinutesLeft > 0) {
+        player.energyEffectMinutesLeft -= 30;
+        if (player.energyEffectMinutesLeft < 0)
+            player.energyEffectMinutesLeft = 0;
+    }
+
     ItemProb* found = map.scavenge(player.currentLocation);
     if (!found) {
         cout << "You found nothing.\n\n"; // "If 'nothing', just skip"
@@ -933,10 +986,17 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
 }
 
 // Rest: restores stamina, costs 1 hour
-void playerRest(Player& player, ZombieSystem &zsys, int &zombieMinuteBuffer) {
+void playerRest(Player& player, ZombieSystem& zsys, int& zombieMinuteBuffer) {
     cout << "\n[Rest] You take some time to rest...\n";
     player.timeMinutes += 60;
     advanceZombies(zsys, zombieMinuteBuffer, 60);
+
+    if (player.energyEffectMinutesLeft > 0) {
+        player.energyEffectMinutesLeft -= 60;
+        if (player.energyEffectMinutesLeft < 0)
+            player.energyEffectMinutesLeft = 0;
+    }
+
     // simple rule: +30 stamina up to 100
     player.stamina += 30;
     if (player.stamina > 100) player.stamina = 100;
@@ -974,7 +1034,7 @@ void useAxeOnBridge(MapGraph& map, Player& player, Inventory& inv) {
 //  - Let H = number of hordes at current node
 //  - If Ammo >= H: kill all hordes, consume H ammo, survive
 //  - If 0 < Ammo < H: kill one horde, consume 1 ammo, player dies
-void useGunOnZombies(Player &player, Inventory &inv, ZombieSystem &zsys, bool &playerAlive) {
+void useGunOnZombies(Player& player, Inventory& inv, ZombieSystem& zsys, bool& playerAlive) {
     // Must have gun
     if (!inv.contains("Gun")) {
         cout << "[Gun] You don't have a gun.\n";
@@ -1004,7 +1064,8 @@ void useGunOnZombies(Player &player, Inventory &inv, ZombieSystem &zsys, bool &p
         }
         zsys.removeAllHordesAt(player.currentLocation);
         cout << "[Gun] You unload your gun and wipe out all hordes at this location. You survive.\n";
-    } else {
+    }
+    else {
         // Not enough ammo: kill one, die
         inv.consumeOne("Ammo"); // consume 1 bullet
         zsys.removeOneHordeAt(player.currentLocation);
@@ -1053,6 +1114,8 @@ int main() {
     player.currentLocation = TOWN_HALL;
     player.timeMinutes = 0;
     player.stamina = 100;
+    player.energyEffectMinutesLeft = 0;   // no active drink at the start
+
 
     bool playerAlive = true;
 
@@ -1073,6 +1136,7 @@ int main() {
         cout << "2. Scavenge   (costs 30 minutes)\n";
         cout << "3. Rest       (costs 1 hour, restores stamina)\n";
         cout << "a. Use an axe on Bridge barricade (no time cost)\n";
+        cout << "e. Drink energy drink (no time cost)\n";
         cout << "j. Use junk on this node (no time cost)\n";
         cout << "g. Use gun on nearby zombies (no time cost)\n";
         cout << "i. Inventory  (no time cost)\n";
@@ -1095,6 +1159,9 @@ int main() {
         case 'A':
             useAxeOnBridge(map, player, inventory);
             break;
+        case 'e':
+        case 'E':
+            useEnergyDrink(player, inventory, playerAlive);
         case 'j':
         case 'J':
             useJunkAtCurrentNode(player, inventory, zsys);
