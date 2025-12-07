@@ -102,25 +102,6 @@ public:
     int getCapacity() const { return capacity; }
     int getUsedSlots() const { return usedSlots; }
 
-
-    // Consume one unit of a given item (e.g. "Junk")
-    // Returns true if consumed, false if item not found
-    bool consumeOne(const string& itemName) {
-        InvNode* temp = head;
-        while (temp) {
-            if (temp->name == itemName) {
-                temp->quantity--;
-                if (temp->quantity <= 0) {
-                    // delete the node if quantity is 0
-                    deleteNode(temp);
-                }
-                return true;
-            }
-            temp = temp->next;
-        }
-        return false; // item not found
-    }
-
     // Called when Backpack is obtained
     void applyBackpack() {
         if (hasBackpack) {
