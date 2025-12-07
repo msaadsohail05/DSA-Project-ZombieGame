@@ -1284,6 +1284,75 @@ void undoLastMove(Player& player, MoveLog& log) {
         << " | Time: " << prevTime << " minutes.\n\n";
 }
 
+// ----- WIN CONDITION HELPERS -----
+
+// Main ending: must have PIN + User ID and stand in Safe Zone
+void checkPrimaryWin(Player& player, Inventory& inv, bool& gameWon) {
+    if (gameWon) return; // already won
+
+    if (player.currentLocation == SAFE_ZONE &&
+        inv.contains("PIN") &&
+        inv.contains("User ID")) {
+
+        cout << "\n====================================\n";
+        cout << " You swipe your User ID and enter the PIN...\n";
+        cout << " The Safe Zone gates slide open.\n";
+        cout << " You are finally safe.\n";
+        cout << "========== YOU WIN! (MAIN ENDING) ==========\n";
+        cout << "====================================\n";
+        gameWon = true;
+    }
+}
+
+// Alternate ending: Car Keys + enough Petrol at HOME
+// - Must be at HOME
+// - Must have Car Keys
+// - Must have at least 5 Petrol (you can change this)
+// - Car has a chance to be functional (e.g., 70%)
+void tryCarEscape(Player& player, Inventory& inv, bool& gameWon) {
+    if (gameWon) return; // already won
+
+    if (player.currentLocation != HOME) {
+        cout << "[Car] You need to be at HOME to use the car.\n";
+        return;
+    }
+
+    if (!inv.contains("Car Keys")) {
+        cout << "[Car] You don't have the Car Keys.\n";
+        return;
+    }
+
+    int petrolCount = inv.countItem("Petrol");
+    const int requiredPetrol = 5; // tweak if you want
+
+    if (petrolCount < requiredPetrol) {
+        cout << "[Car] Not enough Petrol. You have " << petrolCount
+            << ", but you need at least " << requiredPetrol << ".\n";
+        return;
+    }
+
+    cout << "[Car] You sit in the car, insert the keys, and turn the ignition...\n";
+    cout << "      Consuming " << requiredPetrol << " Petrol.\n";
+
+    // Use up fuel (and optionally keep the keys)
+    inv.consumeMany("Petrol", requiredPetrol);
+
+    // Chance the car actually works, e.g., 70%
+    int roll = rand() % 100; // 0–99
+    if (roll < 70) {
+        cout << "      The engine roars to life!\n";
+        cout << "      You speed away from the town.\n";
+        cout << "\n========== YOU ESCAPED BY CAR! (ALT ENDING) ==========\n";
+        gameWon = true;
+    }
+    else {
+        cout << "      The engine sputters and dies...\n";
+        cout << "      The car is a wreck. You'll need another way out.\n";
+        // Optionally: consume keys as well if you want to punish failure
+        // inv.consumeOne("Car Keys");
+    }
+}
+
 // =====================================================
 //                  MAIN GAME LOOP DEMO
 // =====================================================
@@ -1316,6 +1385,7 @@ int main() {
     player.adrenalineMovesLeft = 0;
 
     bool playerAlive = true;
+    bool gameWon = false;
 
     cout << "=== SURVIVAL GAME DEMO: INVENTORY + UNDO + ZOMBIES + ITEMS ===\n";
     map.printMap();
@@ -1350,6 +1420,7 @@ int main() {
         cout << "j. Use junk on this node (no time cost)\n";
         cout << "g. Use gun on nearby zombies (no time cost)\n";
         cout << "i. Inventory  (no time cost)\n";
+        cout << "k. Try car escape (HOME only, no time cost)\n";
         cout << "p. Take pills (no time cost)\n";
         cout << "u. Undo last move (no time cost)\n";
         cout << "q. Quit\n";
@@ -1390,6 +1461,10 @@ int main() {
         case 'I':
             inventory.openMenu(); // no time cost
             break;
+        case 'k':
+        case 'K':
+            tryCarEscape(player, inventory, gameWon);
+            break;
         case 'p':
         case 'P':
             usePills(player, inventory, playerAlive);
@@ -1406,8 +1481,14 @@ int main() {
             cout << "Invalid choice.\n";
         }
 
+        checkPrimaryWin(player, inventory, gameWon);
+
         if (!playerAlive) {
             cout << "\n=== GAME OVER: You died. ===\n";
+            break;
+        }
+
+        if (gameWon) {
             break;
         }
 
