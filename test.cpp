@@ -1162,6 +1162,7 @@ int main() {
         case 'e':
         case 'E':
             useEnergyDrink(player, inventory, playerAlive);
+            break;
         case 'j':
         case 'J':
             useJunkAtCurrentNode(player, inventory, zsys);
