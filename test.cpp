@@ -58,6 +58,7 @@ struct Player {
     int timeMinutes;     // total time passed
     int stamina;         // 0–100
     int energyEffectMinutesLeft;
+    int pillsEffectMinutesLeft;
 
 };
 
@@ -890,6 +891,12 @@ void playerMove(MapGraph& map, Player& player, MoveLog& log,
             if (player.energyEffectMinutesLeft < 0)
                 player.energyEffectMinutesLeft = 0;
         }
+
+        if (player.pillsEffectMinutesLeft > 0) {
+            player.pillsEffectMinutesLeft -= 60;
+            if (player.pillsEffectMinutesLeft < 0)
+                player.pillsEffectMinutesLeft = 0;
+        }
     }
 }
 
@@ -910,6 +917,12 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
         player.energyEffectMinutesLeft -= 30;
         if (player.energyEffectMinutesLeft < 0)
             player.energyEffectMinutesLeft = 0;
+    }
+
+    if (player.pillsEffectMinutesLeft > 0) {
+        player.pillsEffectMinutesLeft -= 30;
+        if (player.pillsEffectMinutesLeft < 0)
+            player.pillsEffectMinutesLeft = 0;
     }
 
     ItemProb* found = map.scavenge(player.currentLocation);
@@ -997,12 +1010,80 @@ void playerRest(Player& player, ZombieSystem& zsys, int& zombieMinuteBuffer) {
             player.energyEffectMinutesLeft = 0;
     }
 
+    if (player.pillsEffectMinutesLeft > 0) {
+        player.pillsEffectMinutesLeft -= 60;
+        if (player.pillsEffectMinutesLeft < 0)
+            player.pillsEffectMinutesLeft = 0;
+    }
+
     // simple rule: +30 stamina up to 100
     player.stamina += 30;
     if (player.stamina > 100) player.stamina = 100;
 
     cout << "Time +60 minutes. Total time: " << player.timeMinutes << " minutes.\n";
     cout << "Stamina restored. Current stamina: " << player.stamina << "\n\n";
+}
+
+// Pills:
+//  - +50 stamina (max 100)
+//  - Effect lasts ~2 moves => 120 minutes
+//  - If taken again while pillsEffectMinutesLeft > 0
+//    OR while Energy Drink is still active -> overdose check:
+//      * 60%: die
+//      * 40%: survive but stamina penalty
+void usePills(Player& player, Inventory& inv, bool& playerAlive) {
+    if (!inv.consumeOne("Pills")) {
+        cout << "[Pills] You don't have any Pills.\n";
+        return;
+    }
+
+    bool overdoseRisk = false;
+
+    // Risk if Pills already active
+    if (player.pillsEffectMinutesLeft > 0)
+        overdoseRisk = true;
+
+    // Also risk if Energy Drink is active
+    if (player.energyEffectMinutesLeft > 0)
+        overdoseRisk = true;
+
+    // Apply stamina boost
+    player.stamina += 50;   // tweak if you want a different boost
+    if (player.stamina > 100) player.stamina = 100;
+
+    // Pills effect lasts 2 moves ≈ 120 minutes
+    player.pillsEffectMinutesLeft = 120;
+
+    cout << "[Pills] You take some Pills. Stamina is now "
+        << player.stamina << ".\n";
+
+    if (overdoseRisk) {
+        cout << "[Pills] You used Pills while another stimulant/effect is still active...\n";
+        int roll = rand() % 100; // 0–99
+
+        cout << "Rolling for overdose (60% chance)...\n";
+
+        if (roll < 60) {
+            // Lethal overdose
+            cout << ">>> OVERDOSE! Your body can't handle it.\n";
+            cout << "    You collapse and die.\n";
+            playerAlive = false;
+        }
+        else {
+            // Non-lethal overdose: crash + stamina penalty
+            cout << ">>> You suffer a brutal crash but survive.\n";
+            cout << "    You feel extremely weak.\n";
+
+            player.stamina -= 30;
+            if (player.stamina < 0) player.stamina = 0;
+
+            // Clear both effect windows: body crashes
+            player.pillsEffectMinutesLeft = 0;
+            player.energyEffectMinutesLeft = 0;
+
+            cout << "    Stamina after crash: " << player.stamina << "\n";
+        }
+    }
 }
 
 void useAxeOnBridge(MapGraph& map, Player& player, Inventory& inv) {
@@ -1115,7 +1196,7 @@ int main() {
     player.timeMinutes = 0;
     player.stamina = 100;
     player.energyEffectMinutesLeft = 0;   // no active drink at the start
-
+    player.pillsEffectMinutesLeft = 0; 
 
     bool playerAlive = true;
 
@@ -1140,6 +1221,7 @@ int main() {
         cout << "j. Use junk on this node (no time cost)\n";
         cout << "g. Use gun on nearby zombies (no time cost)\n";
         cout << "i. Inventory  (no time cost)\n";
+        cout << "p. Take pills (no time cost)\n";
         cout << "u. Undo last move (no time cost)\n";
         cout << "q. Quit\n";
         cout << "Enter choice: ";
@@ -1162,7 +1244,6 @@ int main() {
         case 'e':
         case 'E':
             useEnergyDrink(player, inventory, playerAlive);
-            break;
         case 'j':
         case 'J':
             useJunkAtCurrentNode(player, inventory, zsys);
@@ -1174,6 +1255,10 @@ int main() {
         case 'i':
         case 'I':
             inventory.openMenu(); // no time cost
+            break;
+        case 'p':
+        case 'P':
+            usePills(player, inventory, playerAlive);
             break;
         case 'u':
         case 'U':
