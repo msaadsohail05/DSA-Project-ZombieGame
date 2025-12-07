@@ -312,6 +312,23 @@ public:
             }
         } while (choice != 'e');
     }
+
+    // Consume one unit of an item (e.g. "Axe").
+    // Returns true if one was consumed, false if item not found.
+    bool consumeOne(const string& itemName) {
+        InvNode* temp = head;
+        while (temp) {
+            if (temp->name == itemName) {
+                temp->quantity--;
+                if (temp->quantity <= 0) {
+                    deleteNode(temp);  // already defined
+                }
+                return true;
+            }
+            temp = temp->next;
+        }
+        return false; // item not present
+    }
 };
 
 // =====================================================
@@ -379,11 +396,15 @@ class MapGraph {
 private:
     Node* adj[COUNT];                  // adjacency list
     vector<ItemProb> itemTable[COUNT]; // item probabilities for each node
+    bool bridgeUnlocked;          //  to check if the bridge to safe zone is unlocked
+
 
 public:
     MapGraph() {
         for (int i = 0; i < COUNT; i++)
             adj[i] = NULL;
+
+        bridgeUnlocked = false;
 
         buildDefaultMap();
         initItemProbabilities();
@@ -489,6 +510,21 @@ public:
         cout << "Total = " << sum << "% | Nothing = " << (100.0 - sum) << "%\n\n";
     }
 
+    void unlockBridgeToSafeZone() {
+        if (bridgeUnlocked) {
+            cout << "[Map] The path from Bridge to Safe Zone is already open.\n";
+            return;
+        }
+        addEdge(BRIDGE, SAFE_ZONE);
+        bridgeUnlocked = true;
+        cout << "[Map] You chopped down the barricade at the Bridge.\n";
+        cout << "      The path to the Safe Zone is now open!\n";
+    }
+
+    bool isBridgeOpen() const {
+        return bridgeUnlocked;
+    }
+
 private:
     void buildDefaultMap() {
         addEdge(TOWN_HALL, HOME);
@@ -519,7 +555,7 @@ private:
 
         addEdge(POLICE_STATION, HOSPITAL);
 
-        addEdge(BRIDGE, SAFE_ZONE);
+        //addEdge(BRIDGE, SAFE_ZONE);
     }
 
     // Inside MapGraph:
@@ -578,7 +614,7 @@ private:
 
         // ---------- STORE ----------
         // - 1 Bread = 10%
-        // - 2 Apples = 10%
+        // - 2 Apples = 10%             
         // - 2 Energy Drinks = 10%
         // - 1 Axe = 35%
         // - 3 Junk = 5%
@@ -928,6 +964,29 @@ void playerRest(Player& player, ZombieSystem &zsys, int &zombieMinuteBuffer) {
     cout << "Stamina restored. Current stamina: " << player.stamina << "\n\n";
 }
 
+void useAxeOnBridge(MapGraph& map, Player& player, Inventory& inv) {
+    // Must be at Bridge to use Axe
+    if (player.currentLocation != BRIDGE) {
+        cout << "[Axe] You need to be at the Bridge to chop the barricade.\n";
+        return;
+    }
+
+    // Check if already unlocked
+    if (map.isBridgeOpen()) {
+        cout << "[Axe] The path to the Safe Zone is already open.\n";
+        return;
+    }
+
+    // Try to consume one Axe from inventory
+    if (!inv.consumeOne("Axe")) {
+        cout << "[Axe] You don't have an Axe in your inventory.\n";
+        return;
+    }
+
+    // Unlock the edge in the graph
+    map.unlockBridgeToSafeZone();
+}
+
 // Undo last move using MoveLog DLL
 void undoLastMove(Player& player, MoveLog& log) {
     Location prevLoc;
@@ -983,6 +1042,7 @@ int main() {
         cout << "1. Move       (costs 1 hour)\n";
         cout << "2. Scavenge   (costs 30 minutes)\n";
         cout << "3. Rest       (costs 1 hour, restores stamina)\n";
+        cout << "a. Use an axe on Bridge barricade (no time cost)\n";
         cout << "j. Use junk on this node (no time cost)\n";
         cout << "i. Inventory  (no time cost)\n";
         cout << "u. Undo last move (no time cost)\n";
@@ -999,6 +1059,10 @@ int main() {
             break;
         case '3':
             playerRest(player,zsys, zombieMinuteBuffer);
+            break;
+        case 'a':
+        case 'A':
+            useAxeOnBridge(map, player, inventory);
             break;
         case 'j':
         case 'J':
