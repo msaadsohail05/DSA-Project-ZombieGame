@@ -1037,6 +1037,7 @@ void useEnergyDrink(Player& player, Inventory& inv, bool& playerAlive) {
     }
 }
 
+void resolveZombieEncounter(Player& player, Inventory& inv, ZombieSystem& zsys, bool& playerAlive);
 // =====================================================
 //                 PLAYER ACTIONS
 // =====================================================
