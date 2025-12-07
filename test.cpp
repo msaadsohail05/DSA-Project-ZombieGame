@@ -672,10 +672,25 @@ private:
 //                  ZOMBIE SYSTEM (MINIMAL)
 // =====================================================
 
+// Infection tree node: which location infected which
+struct InfectionNode {
+    Location loc;
+    InfectionNode* left;
+    InfectionNode* right;
+
+    InfectionNode(Location l) : loc(l), left(nullptr), right(nullptr) {}
+};
+
 struct ZombieHorde {
     int id;
     Location currentLocation;
-    int infectionRate; // %
+    int infectionRate;      // % (starts at 10, +5 per move)
+    InfectionNode* treeNode; // pointer into infection tree
+
+    ZombieHorde() {}
+    ZombieHorde(int _id, Location loc, int rate, InfectionNode* node)
+        : id(_id), currentLocation(loc), infectionRate(rate), treeNode(node) {
+    }
 };
 
 class ZombieSystem {
@@ -684,20 +699,36 @@ private:
     vector<ZombieHorde> hordes;
     int junkBlocks[COUNT];   // Junk protection duration per node (in zombie moves)
     int nextId;
+    bool infected[COUNT];
+    InfectionNode* infectionRoot;
 
 public:
     ZombieSystem(MapGraph* m) {
         map = m;
         nextId = 1;
-        for (int i = 0; i < COUNT; ++i) junkBlocks[i] = 0;
+        for (int i = 0; i < COUNT; ++i) {
+            junkBlocks[i] = 0;
+            infected[i] = false;
+        }
+        infectionRoot = nullptr;
     }
 
     void addInitialHorde(Location loc) {
-        ZombieHorde h;
-        h.id = nextId++;
-        h.currentLocation = loc;
-        h.infectionRate = 10; // start 10%
+        InfectionNode* node = new InfectionNode(loc);
+
+        if (!infectionRoot) {
+            infectionRoot = node;      // first outbreak root
+        }
+        else {
+            // If you ever want multiple roots, you can attach it somewhere else
+            // For now, keep first infected as root.
+        }
+
+        ZombieHorde h(nextId++, loc, 10, node); // start infectionRate at 10%
         hordes.push_back(h);
+
+        infected[loc] = true;
+
         cout << "[Zombie] Created horde " << h.id
             << " at " << locationToString(loc)
             << " (infection 10%)\n";
@@ -714,8 +745,26 @@ public:
     void simulateHour() {
         cout << "\n=== ZOMBIES MOVE (1 HOUR) ===\n";
 
+        vector<ZombieHorde> newHordes;
+
         for (auto& h : hordes) {
-            moveHordeOneStep(h);
+            moveHordeOneStep(h, newHordes);
+        }
+
+        // Add newly created hordes from infections
+        for (auto& nh : newHordes) {
+            hordes.push_back(nh);
+        }
+
+        // Meeting rule: if multiple hordes end up on same node → reset infectionRate to 10
+        int countAt[COUNT] = { 0 };
+        for (auto& h : hordes) {
+            countAt[h.currentLocation]++;
+        }
+        for (auto& h : hordes) {
+            if (countAt[h.currentLocation] > 1) {
+                h.infectionRate = 10;
+            }
         }
 
         // Decrease Junk timers
@@ -750,6 +799,7 @@ public:
             }
         }
     }
+
     void moveHordesToward(Location target) {
         cout << "[Scent] Zombies catch your scent and move toward "
             << locationToString(target) << " if possible.\n";
@@ -758,16 +808,102 @@ public:
             if (zombie.currentLocation == target) continue; // already there
 
             Node* temp = map->getNeighbors(zombie.currentLocation);
+            bool moved = false;
+
             while (temp) {
-                if ((Location)temp->vertex == target) {
+                Location neigh = (Location)temp->vertex;
+                if (neigh == target && junkBlocks[neigh] == 0) {
                     zombie.currentLocation = target;
                     zombie.infectionRate += 5;
+                    if (zombie.infectionRate > 100) zombie.infectionRate = 100;
                     cout << "  [Horde " << zombie.id << "] rushes to your location!\n";
+                    moved = true;
                     break;
                 }
                 temp = temp->next;
             }
+            // if no direct edge → this horde just doesn't move in this "scent" event
         }
+    }
+
+    void moveHordeOneStep(ZombieHorde& zombie, vector<ZombieHorde>& newHordes) {
+        cout << "[Horde " << zombie.id << "] At "
+            << locationToString(zombie.currentLocation)
+            << " | Infection: " << zombie.infectionRate << "%\n";
+
+        int roll = rand() % 100;
+
+        // 15% chance to rest
+        if (roll < 15) {
+            cout << "  -> Resting. Infection unchanged.\n\n";
+            return;
+        }
+
+        // Gather neighbors that are NOT Junk-blocked
+        vector<Location> neighbors;
+        Node* temp = map->getNeighbors(zombie.currentLocation);
+        while (temp) {
+            Location neigh = (Location)temp->vertex;
+            if (junkBlocks[neigh] == 0) {
+                neighbors.push_back(neigh);
+            }
+            temp = temp->next;
+        }
+
+        if (neighbors.empty()) {
+            cout << "  -> All neighboring paths blocked by Junk. Horde stays.\n";
+            cout << "     Infection paused (no +5).\n\n";
+            return;
+        }
+
+        // Random neighbor
+        int idx = rand() % neighbors.size();
+        Location newLoc = neighbors[idx];
+
+        zombie.currentLocation = newLoc;
+        zombie.infectionRate += 5;   // each move increases infection chance
+        if (zombie.infectionRate > 100) zombie.infectionRate = 100;
+
+        cout << "  -> Moved to " << locationToString(newLoc)
+            << ". Infection now " << zombie.infectionRate << "%\n";
+
+        // Try to infect this location if it was never infected
+        if (!infected[newLoc]) {
+            int infectRoll = rand() % 100;
+            if (infectRoll < zombie.infectionRate) {
+                cout << "     >> " << locationToString(newLoc)
+                    << " has been INFECTED by Horde " << zombie.id << "!\n";
+
+                infected[newLoc] = true;
+
+                // reset this horde's infectionRate AFTER a successful infection
+                zombie.infectionRate = 10;
+
+                // ---- Infection tree: add child node ----
+                InfectionNode* child = new InfectionNode(newLoc);
+                if (!zombie.treeNode->left)
+                    zombie.treeNode->left = child;
+                else if (!zombie.treeNode->right)
+                    zombie.treeNode->right = child;
+                // if both occupied, you could decide to ignore OR pick randomly
+
+                // ---- Split: create a NEW independent horde at newLoc ----
+                ZombieHorde splitHorde(nextId++, newLoc, 10, child);
+                newHordes.push_back(splitHorde);
+
+                cout << "     >> New horde " << splitHorde.id
+                    << " spawned at " << locationToString(newLoc)
+                    << " with infection 10%.\n";
+            }
+        }
+
+        cout << "\n";
+    }
+    bool isHordeAt(Location loc) const {
+        for (const auto& h : hordes) {
+            if (h.currentLocation == loc) return true;
+        }
+        return false;
     }
 
 private:
@@ -970,15 +1106,26 @@ void playerMove(MapGraph& map, Player& player, MoveLog& log,ZombieSystem& zsys, 
     // ---------- perform move ----------
     bool ok = map.movePlayer(player, options[choice - 1], log, moveCost);
     if (ok) {
-        // Scent: 5% chance zombies move directly to you
+        // 🔹 1) Immediately resolve combat if you walked INTO a horde tile
+        resolveZombieEncounter(player, inv, zsys, playerAlive);
+        if (!playerAlive) return; // no need to continue
+
+        // 🔹 2) Scent mechanic (zombies move towards you)
         int scentRoll = rand() % 100;
         if (scentRoll < 5) {
             zsys.moveHordesToward(player.currentLocation);
         }
 
+        // 🔹 3) Time passes → zombies move → statuses tick
         advanceZombies(zsys, zombieMinuteBuffer, moveCost);
         applyTimeToPlayer(player, moveCost, playerAlive);
+        if (!playerAlive) return;
 
+        // 🔹 4) If zombies arrive after movement, auto-combat again
+        if (zsys.isHordeAt(player.currentLocation)) {
+            cout << "\n⚠ A zombie horde reaches your location!\n";
+            resolveZombieEncounter(player, inv, zsys, playerAlive);
+        }
         // POISONED: -5 HP every turn (action), if not bandaged
         if (player.isPoisoned && player.clothEffectMinutesLeft <= 0) {
             player.hp -= 5;
@@ -1012,6 +1159,14 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv,ZombieSystem& 
             cout << "[Poison] You succumb to the poison...\n";
             playerAlive = false;
         }
+    }
+    if (!playerAlive) return;
+
+    // If zombies reached your node while scavenging
+    if (zsys.isHordeAt(player.currentLocation)) {
+        cout << "\n⚠ A zombie horde shambles into your area while you scavenge!\n";
+        resolveZombieEncounter(player, inv, zsys, playerAlive);
+        if (!playerAlive) return;
     }
 
     ItemProb* found = map.scavenge(player.currentLocation);
@@ -1088,7 +1243,7 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv,ZombieSystem& 
 }
 
 // Rest: restores stamina, costs 1 hour
-void playerRest(Player& player, ZombieSystem& zsys, int& zombieMinuteBuffer,bool &playerAlive) {
+void playerRest(Player& player,Inventory& inv ,ZombieSystem& zsys, int& zombieMinuteBuffer,bool &playerAlive) {
     cout << "\n[Rest] You take some time to rest...\n";
     player.timeMinutes += 60;
     advanceZombies(zsys, zombieMinuteBuffer, 60);
@@ -1102,6 +1257,14 @@ void playerRest(Player& player, ZombieSystem& zsys, int& zombieMinuteBuffer,bool
             cout << "[Poison] You succumb to the poison...\n";
             playerAlive = false;
         }
+    }
+
+    if (!playerAlive) return;
+
+    if (zsys.isHordeAt(player.currentLocation)) {
+        cout << "\n⚠ A zombie horde finds you while you are resting!\n";
+        resolveZombieEncounter(player, inv, zsys, playerAlive);
+        if (!playerAlive) return;
     }
 
     // simple rule: +30 stamina up to 100
@@ -1263,6 +1426,31 @@ void useGunOnZombies(Player& player, Inventory& inv, ZombieSystem& zsys, bool& p
         cout << "[Gun] You managed to kill one horde, but you ran out of ammo.\n";
         cout << "      The remaining zombies overwhelm you...\n";
         cout << "      You died.\n";
+        playerAlive = false;
+    }
+}
+
+void resolveZombieEncounter(Player& player,
+    Inventory& inv,
+    ZombieSystem& zsys,
+    bool& playerAlive)
+{
+    if (!playerAlive) return;
+
+    int hordesHere = zsys.countHordesAt(player.currentLocation);
+    if (hordesHere == 0) return;
+
+    cout << "\n⚠ You have encountered " << hordesHere
+        << " zombie horde(s) at " << locationToString(player.currentLocation) << "!\n";
+
+    // If player has gun + ammo, auto-start gun combat
+    if (inv.contains("Gun") && inv.countItem("Ammo") > 0) {
+        cout << "[Combat] You quickly draw your gun and open fire...\n";
+        useGunOnZombies(player, inv, zsys, playerAlive);
+    }
+    else {
+        cout << "[Combat] You have no gun or ammo.\n";
+        cout << "         The zombies swarm you...\n";
         playerAlive = false;
     }
 }
@@ -1435,7 +1623,7 @@ int main() {
             playerScavenge(map, player, inventory, zsys, zombieMinuteBuffer,playerAlive);
             break;
         case '3':
-            playerRest(player, zsys, zombieMinuteBuffer, playerAlive);
+            playerRest(player,inventory, zsys, zombieMinuteBuffer, playerAlive);
             break;
         case 'a':
         case 'A':
