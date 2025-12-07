@@ -294,7 +294,7 @@ public:
         } while (choice != 'e');
     }
 
-    // Consume one unit of an item (e.g. "Axe").
+    // Consume one unit of an item (e.g. "Axe", "Junk", "Ammo").
     // Returns true if one was consumed, false if item not found.
     bool consumeOne(const string& itemName) {
         InvNode* temp = head;
@@ -309,6 +309,41 @@ public:
             temp = temp->next;
         }
         return false; // item not present
+    }
+
+    // Count total quantity of a specific item in inventory
+    int countItem(const string& itemName) const {
+        int total = 0;
+        InvNode* temp = head;
+        while (temp) {
+            if (temp->name == itemName) {
+                total += temp->quantity;
+            }
+            temp = temp->next;
+        }
+        return total;
+    }
+
+    // Consume N units of an item; returns true if fully consumed, false if not enough
+    bool consumeMany(const string& itemName, int count) {
+        int remaining = count;
+        InvNode* temp = head;
+        while (temp && remaining > 0) {
+            if (temp->name == itemName) {
+                if (temp->quantity > remaining) {
+                    temp->quantity -= remaining;
+                    remaining = 0;
+                } else {
+                    remaining -= temp->quantity;
+                    InvNode* toDelete = temp;
+                    temp = temp->next;
+                    deleteNode(toDelete);
+                    continue; // skip temp = temp->next below
+                }
+            }
+            if (temp) temp = temp->next;
+        }
+        return remaining == 0;
     }
 };
 
@@ -378,7 +413,6 @@ private:
     Node* adj[COUNT];                  // adjacency list
     vector<ItemProb> itemTable[COUNT]; // item probabilities for each node
     bool bridgeUnlocked;          //  to check if the bridge to safe zone is unlocked
-
 
 public:
     MapGraph() {
@@ -536,10 +570,9 @@ private:
 
         addEdge(POLICE_STATION, HOSPITAL);
 
-        //addEdge(BRIDGE, SAFE_ZONE);
+        // BRIDGE -> SAFE_ZONE is locked until Axe is used
+        // addEdge(BRIDGE, SAFE_ZONE);
     }
-
-    // Inside MapGraph:
 
     void addItem(Location loc, const string& name, double prob) {
         itemTable[loc].push_back({ name, prob });
@@ -547,11 +580,6 @@ private:
 
     void initItemProbabilities() {
         // ---------- HOME ----------
-        // - 1 Bread = 19%
-        // - 1 Pills = 10%
-        // - 2 Apples = 10% (group)
-        // - User ID = 10%
-        // - Car Keys = 1%
         addItem(HOME, "Bread", 19);
         addItem(HOME, "Pills", 10);
         addItem(HOME, "Apple", 10);   // represents the apple group
@@ -560,126 +588,71 @@ private:
         // Sum = 50% → Nothing = 50%
 
         // ---------- PETROL STATION ----------
-        // - 5 Petrol = 12%
-        // - 2 Clothes = 20%
         addItem(PETROL_STATION, "Petrol", 12);
         addItem(PETROL_STATION, "Cloth", 20);
-        // Sum = 32% → Nothing = 68%
 
         // ---------- PARK ----------
-        // - 3 Apples = 10%
-        // - 1 Energy Drink = 5%
-        // - 3 Coins = 15%
-        // - 2 Twigs = 10%
         addItem(PARK, "Apple", 10);
         addItem(PARK, "Energy Drink", 5);
         addItem(PARK, "Coin", 15);
         addItem(PARK, "Twig", 10);
-        // Sum = 40% → Nothing = 60%
 
         // ---------- BUS STOP ----------
-        // - 4 Coins = 10%
-        // - 3 Pebbles = 15%
         addItem(BUS_STOP, "Coin", 10);
         addItem(BUS_STOP, "Pebble", 15);
-        // Sum = 25% → Nothing = 75%
 
         // ---------- OFFICE ----------
-        // - 2 Pills = 10%
-        // - 1 User ID = 35%
-        // - 3 Junk = 15%
         addItem(OFFICE, "Pills", 10);
         addItem(OFFICE, "User ID", 35);
         addItem(OFFICE, "Junk", 15);
-        // Sum = 60% → Nothing = 40%
 
         // ---------- STORE ----------
-        // - 1 Bread = 10%
-        // - 2 Apples = 10%             
-        // - 2 Energy Drinks = 10%
-        // - 1 Axe = 35%
-        // - 3 Junk = 5%
         addItem(STORE, "Bread", 10);
         addItem(STORE, "Apple", 10);
         addItem(STORE, "Energy Drink", 10);
         addItem(STORE, "Axe", 35);
         addItem(STORE, "Junk", 5);
-        // Sum = 70% → Nothing = 30%
 
         // ---------- SCHOOL ----------
-        // - 2 Apples  = 5%
-        // - 1 Backpack = 30%
-        // - 4 Junk = 5%
-        // - 1 Book = 15%
         addItem(SCHOOL, "Apple", 5);
         addItem(SCHOOL, "Backpack", 30);
         addItem(SCHOOL, "Junk", 5);
         addItem(SCHOOL, "Book", 15);
-        // Sum = 55% → Nothing = 45%
 
         // ---------- TOWN HALL ----------
-        // - 4 Coins = 5%
-        // - 1 Bread = 10%
-        // - 1 Cloth = 10%
-        // - 4 Pebbles = 15%
         addItem(TOWN_HALL, "Coin", 5);
         addItem(TOWN_HALL, "Bread", 10);
         addItem(TOWN_HALL, "Cloth", 10);
         addItem(TOWN_HALL, "Pebble", 15);
-        // Sum = 45% → Nothing = 55%
 
         // ---------- CAFE ----------
-        // - 3 Energy Drinks = 20%
-        // - 1 Bread = 15%
-        // - 4 Coins = 5%
         addItem(CAFE, "Energy Drink", 20);
         addItem(CAFE, "Bread", 15);
         addItem(CAFE, "Coin", 5);
-        // Sum = 40% → Nothing = 60%
 
         // ---------- POLICE STATION ----------
-        // - 1 Gun = 50% (with 1 ammo)
-        // - 4 Ammo = 10%
-        // - 2 Energy Drinks = 10%
         addItem(POLICE_STATION, "Gun", 50);
         addItem(POLICE_STATION, "Ammo", 10);
         addItem(POLICE_STATION, "Energy Drink", 10);
-        // Sum = 70% → Nothing = 30%
 
         // ---------- HOSPITAL ----------
-        // - 2 Apples  = 15%
-        // - 2 Clothes = 15%
-        // - 3 First Aid = 20%
         addItem(HOSPITAL, "Apple", 15);
         addItem(HOSPITAL, "Cloth", 15);
         addItem(HOSPITAL, "First Aid", 20);
-        // Sum = 50% → Nothing = 50%
 
         // ---------- LAB ----------
-        // - 1 PIN = 60%
-        // - 2 Ammo = 5%
-        // - 1 First Aid = 10%
-        // - 2 Pebbles  = 10%
         addItem(LAB, "PIN", 60);
         addItem(LAB, "Ammo", 5);
         addItem(LAB, "First Aid", 10);
         addItem(LAB, "Pebble", 10);
-        // Sum = 85% → Nothing = 15%
 
         // ---------- BRIDGE ----------
-        // - 5 Pebbles = 10%
-        // - 5 Twigs = 10%
-        // - 3 Ammo = 5%
-        // - 1 First Aid = 20%
         addItem(BRIDGE, "Pebble", 10);
         addItem(BRIDGE, "Twig", 10);
         addItem(BRIDGE, "Ammo", 5);
         addItem(BRIDGE, "First Aid", 20);
-        // Sum = 45% → Nothing = 55%
 
-        // ---------- SAFE ZONE ----------
-        // Usually no scavenging here → Nothing = 100%
-        // So we simply don't add any items for SAFE_ZONE.
+        // SAFE_ZONE: nothing
     }
 };
 
@@ -740,6 +713,33 @@ public:
         }
     }
 
+    // ----- COMBAT HELPERS -----
+    int countHordesAt(Location loc) {
+        int c = 0;
+        for (auto &h : hordes) {
+            if (h.currentLocation == loc) c++;
+        }
+        return c;
+    }
+
+    void removeAllHordesAt(Location loc) {
+        for (int i = (int)hordes.size() - 1; i >= 0; --i) {
+            if (hordes[i].currentLocation == loc) {
+                hordes.erase(hordes.begin() + i);
+            }
+        }
+    }
+
+    void removeOneHordeAt(Location loc) {
+        for (int i = 0; i < (int)hordes.size(); ++i) {
+            if (hordes[i].currentLocation == loc) {
+                cout << "[Combat] Horde " << hordes[i].id << " was killed.\n";
+                hordes.erase(hordes.begin() + i);
+                return;
+            }
+        }
+    }
+
 private:
     void moveHordeOneStep(ZombieHorde& zombie) {
         cout << "[Horde " << zombie.id << "] At "
@@ -781,7 +781,6 @@ private:
             << ". Infection now " << zombie.infectionRate << "%\n\n";
     }
 };
-
 
 
 // Keep track of how many minutes have passed for zombie movement
@@ -849,7 +848,8 @@ void playerMove(MapGraph& map, Player& player, MoveLog& log,
 
 // Scavenge: costs 30 minutes, random item / nothing,
 // inventory rules: if full → Swap or Leave
-void playerScavenge(MapGraph& map, Player& player, Inventory& inv,ZombieSystem& zsys, int& zombieMinuteBuffer) {
+void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
+                    ZombieSystem& zsys, int& zombieMinuteBuffer) {
     cout << "\n[Scavenge] You search the area at "
         << locationToString(player.currentLocation) << "...\n";
 
@@ -968,6 +968,53 @@ void useAxeOnBridge(MapGraph& map, Player& player, Inventory& inv) {
     map.unlockBridgeToSafeZone();
 }
 
+// Gun + Ammo combat vs zombie hordes
+// Rule:
+//  - Must have Gun and Ammo
+//  - Let H = number of hordes at current node
+//  - If Ammo >= H: kill all hordes, consume H ammo, survive
+//  - If 0 < Ammo < H: kill one horde, consume 1 ammo, player dies
+void useGunOnZombies(Player &player, Inventory &inv, ZombieSystem &zsys, bool &playerAlive) {
+    // Must have gun
+    if (!inv.contains("Gun")) {
+        cout << "[Gun] You don't have a gun.\n";
+        return;
+    }
+
+    int hordesHere = zsys.countHordesAt(player.currentLocation);
+    if (hordesHere == 0) {
+        cout << "[Gun] There are no zombie hordes here to shoot.\n";
+        return;
+    }
+
+    int ammo = inv.countItem("Ammo");
+    if (ammo == 0) {
+        cout << "[Gun] You have no ammo.\n";
+        return;
+    }
+
+    cout << "[Gun] There are " << hordesHere << " horde(s) here. You have " << ammo << " ammo.\n";
+
+    if (ammo >= hordesHere) {
+        // Enough ammo to clear all hordes here
+        bool ok = inv.consumeMany("Ammo", hordesHere);
+        if (!ok) {
+            // should not happen, but safety
+            cout << "[Gun] Error consuming ammo.\n";
+        }
+        zsys.removeAllHordesAt(player.currentLocation);
+        cout << "[Gun] You unload your gun and wipe out all hordes at this location. You survive.\n";
+    } else {
+        // Not enough ammo: kill one, die
+        inv.consumeOne("Ammo"); // consume 1 bullet
+        zsys.removeOneHordeAt(player.currentLocation);
+        cout << "[Gun] You managed to kill one horde, but you ran out of ammo.\n";
+        cout << "      The remaining zombies overwhelm you...\n";
+        cout << "      You died.\n";
+        playerAlive = false;
+    }
+}
+
 // Undo last move using MoveLog DLL
 void undoLastMove(Player& player, MoveLog& log) {
     Location prevLoc;
@@ -1007,7 +1054,9 @@ int main() {
     player.timeMinutes = 0;
     player.stamina = 100;
 
-    cout << "=== SURVIVAL GAME DEMO: INVENTORY + UNDO MOVE LOG ===\n";
+    bool playerAlive = true;
+
+    cout << "=== SURVIVAL GAME DEMO: INVENTORY + UNDO + ZOMBIES + ITEMS ===\n";
     map.printMap();
 
     char choice;
@@ -1025,6 +1074,7 @@ int main() {
         cout << "3. Rest       (costs 1 hour, restores stamina)\n";
         cout << "a. Use an axe on Bridge barricade (no time cost)\n";
         cout << "j. Use junk on this node (no time cost)\n";
+        cout << "g. Use gun on nearby zombies (no time cost)\n";
         cout << "i. Inventory  (no time cost)\n";
         cout << "u. Undo last move (no time cost)\n";
         cout << "q. Quit\n";
@@ -1036,10 +1086,10 @@ int main() {
             playerMove(map, player, moveLog, zsys, zombieMinuteBuffer);
             break;
         case '2':
-            playerScavenge(map, player, inventory,zsys, zombieMinuteBuffer);
+            playerScavenge(map, player, inventory, zsys, zombieMinuteBuffer);
             break;
         case '3':
-            playerRest(player,zsys, zombieMinuteBuffer);
+            playerRest(player, zsys, zombieMinuteBuffer);
             break;
         case 'a':
         case 'A':
@@ -1049,7 +1099,10 @@ int main() {
         case 'J':
             useJunkAtCurrentNode(player, inventory, zsys);
             break;
-        
+        case 'g':
+        case 'G':
+            useGunOnZombies(player, inventory, zsys, playerAlive);
+            break;
         case 'i':
         case 'I':
             inventory.openMenu(); // no time cost
@@ -1064,6 +1117,11 @@ int main() {
             break;
         default:
             cout << "Invalid choice.\n";
+        }
+
+        if (!playerAlive) {
+            cout << "\n=== GAME OVER: You died. ===\n";
+            break;
         }
 
     } while (choice != 'q' && choice != 'Q');
