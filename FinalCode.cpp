@@ -45,7 +45,7 @@ void pause() {
 }
 
 void printSeparator() {
-    cout << "==================================================================\n";
+    cout << "------------------------------------------------------------------\n";
 }
 
 void printHeader(string title) {
@@ -73,7 +73,7 @@ void drawGameTitle() {
 //              ENUMS AND STRUCTS
 // =====================================================
 enum Location {
-    TOWN_HALL, HOME, OFFICE, LAB, GAS_STATION, PARK, BUS_STOP, STORE, SCHOOL, CAFE, POLICE_STATION,
+    TOWN_HALL, HOME, OFFICE, LAB, PETROL_STATION, PARK, BUS_STOP, STORE, SCHOOL, CAFE, POLICE_STATION,
     HOSPITAL,
     BRIDGE,
     SAFE_ZONE,
@@ -86,40 +86,19 @@ struct Node {
     Node(int v) { vertex = v; next = NULL; }
 };
 
-// Short names for the Map
-string getShortName(Location loc) {
-    switch (loc) {
-    case TOWN_HALL: return "TWN HALL";
-    case HOME: return "  HOME  ";
-    case OFFICE: return " OFFICE ";
-    case LAB: return "  LAB   ";
-    case GAS_STATION: return "GAS STN ";
-    case PARK: return "  PARK  ";
-    case BUS_STOP: return "BUS STOP";
-    case STORE: return " STORE  ";
-    case SCHOOL: return " SCHOOL ";
-    case CAFE: return "  CAFE  ";
-    case POLICE_STATION: return "POLICE  ";
-    case HOSPITAL: return "HOSPITAL";
-    case BRIDGE: return " BRIDGE ";
-    case SAFE_ZONE: return "SAFEZONE";
-    default: return "UNKNOWN ";
-    }
-}
-
 string locationToString(Location loc) {
     switch (loc) {
     case TOWN_HALL: return "Town Hall";
     case HOME: return "Home";
     case OFFICE: return "Office";
     case LAB: return "Lab";
-    case GAS_STATION: return "Gas Station";
+    case PETROL_STATION: return "Petrol Stn";
     case PARK: return "Park";
     case BUS_STOP: return "Bus Stop";
     case STORE: return "Store";
     case SCHOOL: return "School";
     case CAFE: return "Cafe";
-    case POLICE_STATION: return "Police Station";
+    case POLICE_STATION: return "Police Stn";
     case HOSPITAL: return "Hospital";
     case BRIDGE: return "Bridge";
     case SAFE_ZONE: return "Safe Zone";
@@ -164,7 +143,7 @@ private:
     InvNode* tail;
     InvNode* current;
     int capacity;
-    int usedSlots;
+    int usedSlots; // Represents total occupied space (sum of all quantities)
     bool hasBackpack;
 
 public:
@@ -176,7 +155,8 @@ public:
     }
 
     bool isEmpty() const { return head == NULL; }
-    bool isFull() const { return usedSlots >= capacity; }
+    // Full if total occupied slots (including stacks) equals capacity
+    bool isFull() const { return usedSlots >= capacity; } 
     int getCapacity() const { return capacity; }
     int getUsedSlots() const { return usedSlots; }
     
@@ -199,32 +179,42 @@ public:
         return false;
     }
 
-    void addItem(const string& name, const string& desc, int quantity = 1) {
+    // UPDATED LOGIC: Stacks Quantity AND increases Occupied Space
+    bool addItem(const string& name, const string& desc, int quantity = 1) {
+        // 1. Check Capacity first (assuming we add +1 quantity, we need +1 space)
+        if (usedSlots + quantity > capacity) {
+            return false; // Not enough space
+        }
+
+        // 2. Try to Stack
         InvNode* temp = head;
         while (temp != NULL) {
             if (temp->name == name) {
                 temp->quantity += quantity;
-                cout << ">> [Inventory] Stacked more of " << name << ". New qty: " << temp->quantity << "\n";
-                return;
+                usedSlots += quantity; // INCREASE OCCUPIED SPACE even if stacking
+                cout << ">> [Inventory] Stacked " << name << ". New qty: " << temp->quantity << " (Occupies " << temp->quantity << " slots)\n";
+                return true; 
             }
             temp = temp->next;
         }
 
-        if (isFull()) {
-            cout << ">> [Inventory] Full! Cannot add: " << name << "\n";
-            return;
-        }
-
+        // 3. New Item Node
         InvNode* node = new InvNode(name, desc, quantity);
         if (!head) { head = tail = node; }
         else { tail->next = node; node->prev = tail; tail = node; }
-        usedSlots++;
-        cout << ">> [Inventory] Added: " << name << " (x" << quantity << ")\n";
+        
+        usedSlots += quantity; // INCREASE OCCUPIED SPACE
+        cout << ">> [Inventory] Added: " << name << "\n";
+        return true; 
     }
 
     void deleteNode(InvNode* node) {
         if (!node) return;
-        cout << ">> [Inventory] Discarded: " << node->name << "\n";
+        cout << ">> [Inventory] Discarded: " << node->name << " (x" << node->quantity << ")\n";
+        
+        // When deleting a whole node, we free up space equal to its quantity
+        usedSlots -= node->quantity;
+
         if (node->prev) node->prev->next = node->next;
         else head = node->next;
         if (node->next) node->next->prev = node->prev;
@@ -234,7 +224,6 @@ public:
             else current = node->prev;
         }
         delete node;
-        usedSlots--;
     }
 
     void deleteCurrent() {
@@ -265,7 +254,13 @@ public:
         while (temp) {
             if (temp->name == itemName) {
                 temp->quantity--;
-                if (temp->quantity <= 0) deleteNode(temp);
+                usedSlots--; // Free up 1 unit of space
+                
+                if (temp->quantity <= 0) {
+                    // Node is empty. deleteNode will try to subtract quantity (0) from usedSlots
+                    // which is correct (we already subtracted 1 above).
+                    deleteNode(temp);
+                }
                 return true;
             }
             temp = temp->next;
@@ -279,11 +274,15 @@ public:
         while (temp && remaining > 0) {
             if (temp->name == itemName) {
                 if (temp->quantity > remaining) {
+                    // Partial consumption
                     temp->quantity -= remaining;
+                    usedSlots -= remaining; // Manually update space
                     remaining = 0;
                 }
                 else {
+                    // Full node consumption
                     remaining -= temp->quantity;
+                    // deleteNode handles `usedSlots -= temp->quantity` automatically
                     InvNode* toDelete = temp;
                     temp = temp->next;
                     deleteNode(toDelete);
@@ -466,21 +465,6 @@ private:
     vector<ItemProb> itemTable[COUNT];
     bool bridgeUnlocked;
 
-    // Returns a 2-line string array for map display
-    void getMapNodeVisual(Location loc, Player& p, ZombieSystem& zsys, string& line1, string& line2) {
-        bool playerHere = (p.currentLocation == loc);
-        int zombiesHere = zsys.countHordesAt(loc);
-        
-        // Line 1: Name centered
-        line1 = "[" + getShortName(loc) + "]";
-
-        // Line 2: Status
-        if (playerHere && zombiesHere > 0) line2 = "  #!!#  ";
-        else if (playerHere)               line2 = " [YOU]  ";
-        else if (zombiesHere > 0)          line2 = "  !Z!   ";
-        else                               line2 = "  ....  ";
-    }
-
 public:
     MapGraph() {
         for (int i = 0; i < COUNT; i++) adj[i] = NULL;
@@ -490,6 +474,13 @@ public:
     }
 
     void addEdge(Location a, Location b) {
+        // Prevent duplicates
+        Node* temp = adj[a];
+        while (temp) {
+            if (temp->vertex == b) return;
+            temp = temp->next;
+        }
+
         int u = a, v = b;
         Node* newNode = new Node(v);
         newNode->next = adj[u]; adj[u] = newNode;
@@ -497,50 +488,56 @@ public:
         newNode2->next = adj[v]; adj[v] = newNode2;
     }
 
-    // --- NEW PRETTY MAP ---
-    void displayPrettyMap(Player& p, ZombieSystem& zsys) {
+    // --- VISUAL MAP DISPLAY ---
+    void displayVisualMap(Player& p, ZombieSystem& zsys) {
         clearScreen();
-        printHeader("SURVIVAL MAP");
+        printHeader("TACTICAL MAP VIEW");
 
-        // We prepare visual buffers for the nodes
-        string nHome[2], nGas[2], nStore[2], nOffice[2], nPolice[2];
-        string nPark[2], nHall[2], nCafe[2], nSchool[2], nHosp[2];
-        string nBus[2], nLab[2], nBridge[2], nSafe[2];
+        // CLEAN BOX MAP
+        cout << "      +----------+       +----------+       +----------+       +----------+\n";
+        cout << "      |   HOME   |-------|PETROL STN|-------|  STORE   |-------|  OFFICE  |\n";
+        cout << "      +----------+       +----------+       +----------+       +----------+\n";
+        cout << "            |                  |                  |                  |     \n";
+        cout << "            |                  |                  |                  |     \n";
+        cout << "      +----------+       +----------+       +----------+       +----------+\n";
+        cout << "      |   PARK   |-------| TOWN HALL|-------|   CAFE   |-------|POLICE STN|\n";
+        cout << "      +----------+       +----------+       +----------+       +----------+\n";
+        cout << "            |                  |                  |                  |     \n";
+        cout << "            |                  |                  |                  |     \n";
+        cout << "      +----------+       +----------+       +----------+       +----------+\n";
+        cout << "      | BUS STOP |-------|  SCHOOL  |-------|   LAB    |-------| HOSPITAL |\n";
+        cout << "      +----------+       +----------+       +----------+       +----------+\n";
+        cout << "                                                  |                        \n";
+        cout << "                                            +----------+                   \n";
+        cout << "                                            |  BRIDGE  |                   \n";
+        cout << "                                            +----------+                   \n";
+        cout << "                                                  |                        \n";
+        cout << "                                            +----------+                   \n";
+        cout << "                                            | SAFE ZONE|                   \n";
+        cout << "                                            +----------+                   \n";
 
-        getMapNodeVisual(HOME, p, zsys, nHome[0], nHome[1]);
-        getMapNodeVisual(GAS_STATION, p, zsys, nGas[0], nGas[1]);
-        getMapNodeVisual(STORE, p, zsys, nStore[0], nStore[1]);
-        getMapNodeVisual(OFFICE, p, zsys, nOffice[0], nOffice[1]);
-        getMapNodeVisual(POLICE_STATION, p, zsys, nPolice[0], nPolice[1]);
+        printSeparator();
+        cout << ">> SITUATION REPORT:\n\n";
 
-        getMapNodeVisual(PARK, p, zsys, nPark[0], nPark[1]);
-        getMapNodeVisual(TOWN_HALL, p, zsys, nHall[0], nHall[1]);
-        getMapNodeVisual(CAFE, p, zsys, nCafe[0], nCafe[1]);
-        getMapNodeVisual(SCHOOL, p, zsys, nSchool[0], nSchool[1]);
-        getMapNodeVisual(HOSPITAL, p, zsys, nHosp[0], nHosp[1]);
+        // 1. Player Position
+        cout << "   [*] YOUR LOCATION: " << locationToString(p.currentLocation) << "\n";
 
-        getMapNodeVisual(BUS_STOP, p, zsys, nBus[0], nBus[1]);
-        getMapNodeVisual(LAB, p, zsys, nLab[0], nLab[1]);
-        getMapNodeVisual(BRIDGE, p, zsys, nBridge[0], nBridge[1]);
-        getMapNodeVisual(SAFE_ZONE, p, zsys, nSafe[0], nSafe[1]);
+        // 2. Zombie Positions
+        bool zombieFound = false;
+        for (int i = 0; i < COUNT; i++) {
+            int hordes = zsys.countHordesAt((Location)i);
+            if (hordes > 0) {
+                cout << "   [!] ZOMBIE HORDE DETECTED AT: " << locationToString((Location)i) 
+                     << " (Count: " << hordes << ")\n";
+                zombieFound = true;
+            }
+        }
 
-        // DRAWING
-        cout << "      " << nHome[0] << "----" << nGas[0] << "----" << nStore[0] << "----" << nOffice[0] << "----" << nPolice[0] << "\n";
-        cout << "      " << nHome[1] << "    " << nGas[1] << "    " << nStore[1] << "    " << nOffice[1] << "    " << nPolice[1] << "\n";
-        cout << "         |          /      |           |           |           |\n";
-        cout << "         |         /       |           |           |           |\n";
-        cout << "      " << nPark[0] << "----" << nHall[0] << "----" << nCafe[0] << "----" << nSchool[0] << "----" << nHosp[0] << "\n";
-        cout << "      " << nPark[1] << "    " << nHall[1] << "    " << nCafe[1] << "    " << nSchool[1] << "    " << nHosp[1] << "\n";
-        cout << "         |                       |                                  \n";
-        cout << "         |                       |                                  \n";
-        cout << "      " << nBus[0] << "            " << nLab[0] << "----" << nBridge[0] << "====" << nSafe[0] << "\n";
-        cout << "      " << nBus[1] << "            " << nLab[1] << "    " << nBridge[1] << "    " << nSafe[1] << "\n";
+        if (!zombieFound) {
+            cout << "   (No zombies detected nearby...)\n";
+        }
         
         cout << "\n";
-        cout << "  LEGEND:\n";
-        cout << "  [YOU] Current Loc   !Z! Zombie Present   #!!# Danger (Run!)\n";
-        cout << "  ----  Path          ==== Barricade       .... Empty\n";
-        printSeparator();
         pause();
     }
 
@@ -596,61 +593,40 @@ public:
 
 private:
     void buildDefaultMap() {
-        // Clear (if needed)
-        for(int i=0; i<COUNT; i++) adj[i] = NULL;
-
-        // Base Connections
-        addEdge(TOWN_HALL, HOME); addEdge(TOWN_HALL, PARK); addEdge(TOWN_HALL, OFFICE); addEdge(TOWN_HALL, CAFE);
-        addEdge(HOME, PARK); addEdge(HOME, GAS_STATION);
-        addEdge(OFFICE, STORE); addEdge(OFFICE, POLICE_STATION);
-        addEdge(LAB, HOSPITAL); addEdge(LAB, BRIDGE);
-        addEdge(PARK, HOSPITAL); addEdge(CAFE, STORE);
-        addEdge(BUS_STOP, PARK); addEdge(BUS_STOP, SCHOOL); addEdge(BUS_STOP, TOWN_HALL);
-        addEdge(SCHOOL, STORE); addEdge(SCHOOL, CAFE);
-        addEdge(STORE, GAS_STATION);
-        addEdge(POLICE_STATION, HOSPITAL);
-
-        // Requested Accessibility Changes
-        addEdge(PARK, GAS_STATION);
-        // addEdge(OFFICE, HOSPITAL); // Removed per previous prompt
-        
-        // 1. Reset
-        for(int i=0; i<COUNT; i++) adj[i] = NULL;
-
-        // 2. Standard Base
-        addEdge(TOWN_HALL, HOME); addEdge(TOWN_HALL, PARK); addEdge(TOWN_HALL, OFFICE); addEdge(TOWN_HALL, CAFE);
-        addEdge(HOME, PARK); addEdge(HOME, GAS_STATION);
-        addEdge(OFFICE, STORE); addEdge(OFFICE, POLICE_STATION);
-        addEdge(LAB, HOSPITAL); addEdge(LAB, BRIDGE);
-        // addEdge(PARK, HOSPITAL); // Removing weird diagonals to make visual cleaner if needed, but keeping logic consistent with visual
-        // Let's stick strictly to visual layout connections
-        
-        // Visual Layout Row 1: Home-Gas-Store-Office-Police
-        addEdge(HOME, GAS_STATION);
-        addEdge(GAS_STATION, STORE);
+        // Strict Grid Logic
+        // ROW 1
+        addEdge(HOME, PETROL_STATION);
+        addEdge(PETROL_STATION, STORE);
         addEdge(STORE, OFFICE);
-        addEdge(OFFICE, POLICE_STATION);
 
-        // Visual Layout Row 2: Park-Hall-Cafe-School-Hospital
+        // ROW 2
         addEdge(PARK, TOWN_HALL);
         addEdge(TOWN_HALL, CAFE);
-        addEdge(CAFE, SCHOOL);
-        addEdge(SCHOOL, HOSPITAL);
+        addEdge(CAFE, POLICE_STATION);
 
-        // Visual Verticals
+        // ROW 3
+        addEdge(BUS_STOP, SCHOOL);
+        addEdge(SCHOOL, LAB);
+        addEdge(LAB, HOSPITAL);
+
+        // COL 1
         addEdge(HOME, PARK);
-        addEdge(GAS_STATION, TOWN_HALL); // Park to Gas diagonal logic handled here via Town Hall or explicit diagonal below
+        addEdge(PARK, BUS_STOP);
+
+        // COL 2
+        addEdge(PETROL_STATION, TOWN_HALL);
+        addEdge(TOWN_HALL, SCHOOL);
+
+        // COL 3
         addEdge(STORE, CAFE);
-        addEdge(OFFICE, SCHOOL);
+        addEdge(CAFE, LAB);
+
+        // COL 4
+        addEdge(OFFICE, POLICE_STATION);
         addEdge(POLICE_STATION, HOSPITAL);
 
-        // Visual Row 3
-        addEdge(PARK, BUS_STOP);
-        addEdge(CAFE, LAB);
+        // EXIT
         addEdge(LAB, BRIDGE);
-
-        // Explicit Diagonals mentioned in visual
-        addEdge(PARK, GAS_STATION); 
     }
 
     void addItem(Location loc, const string& name, double prob) {
@@ -660,8 +636,8 @@ private:
     void initItemProbabilities() {
         addItem(HOME, "Bread", 30); addItem(HOME, "Pills", 20); addItem(HOME, "Apple", 20);
         addItem(HOME, "User ID", 15); addItem(HOME, "Car Keys", 5);
-        addItem(GAS_STATION, "Petrol", 60); addItem(GAS_STATION, "Petrol", 60); addItem(GAS_STATION, "Petrol", 60); 
-        addItem(GAS_STATION, "Cloth", 20); addItem(GAS_STATION, "Junk", 10);
+        addItem(PETROL_STATION, "Petrol", 60); addItem(PETROL_STATION, "Petrol", 60); addItem(PETROL_STATION, "Petrol", 60); 
+        addItem(PETROL_STATION, "Cloth", 20); addItem(PETROL_STATION, "Junk", 10);
         addItem(PARK, "Apple", 25); addItem(PARK, "Energy Drink", 15); addItem(PARK, "Twig", 15); addItem(PARK, "Pebble", 35);
         addItem(BUS_STOP, "Pebble", 70); addItem(BUS_STOP, "Junk", 15);
         addItem(OFFICE, "Pills", 20); addItem(OFFICE, "User ID", 40); addItem(OFFICE, "Junk", 30);
@@ -1045,12 +1021,6 @@ void playerMove(MapGraph& map, Player& player, MoveLog& log, ZombieSystem& zsys,
     int cost = 60;
     if (inv.isFull()) cost += 30;
     if (player.isPoisoned) cost += 30;
-    
-    // Adrenaline Event (15% chance if HP < 60)
-    if (player.hp < 60 && player.adrenalineMovesLeft == 0 && (rand() % 100 < 15)) {
-        cout << ">> [Adrenaline] Rush! Faster moves.\n"; player.adrenalineMovesLeft = 2;
-    }
-
     if (player.adrenalineMovesLeft > 0) { cost /= 2; if (cost < 15) cost = 15; player.adrenalineMovesLeft--; }
     if (player.speedBoostTimer > 0) {
         cost /= 2; player.speedBoostTimer -= 30; if (player.speedBoostTimer < 0) player.speedBoostTimer = 0;
@@ -1103,8 +1073,9 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv, ZombieSystem&
 
     cout << "   Pick (P) or Leave (L)? "; char c; cin >> c;
     if (tolower(c) == 'p') {
-        if (!inv.isFull()) { 
-            inv.addItem(found->name, "Item.", 1); 
+        // Try adding. If full, addItem returns false.
+        bool added = inv.addItem(found->name, "Item.", 1);
+        if (added) { 
             if (found->name == "Gun") inv.addItem("Ammo", "Round.", 1);
             map.removeItemChance(player.currentLocation, found); 
         } else {
@@ -1112,8 +1083,9 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv, ZombieSystem&
             if (tolower(c2) == 's') {
                 inv.listItemsWithIndex(); int idx; cout << "Del Index: "; cin >> idx;
                 inv.deleteByIndex(idx);
-                if (!inv.isFull()) { 
-                    inv.addItem(found->name, "Item.", 1); 
+                
+                // Try adding again after deleting
+                if (inv.addItem(found->name, "Item.", 1)) { 
                     if (found->name == "Gun") inv.addItem("Ammo", "Round.", 1);
                     map.removeItemChance(player.currentLocation, found); 
                 }
@@ -1187,7 +1159,7 @@ int main() {
         case '1': playerMove(map, p, log, zsys, zBuf, inv, alive); break;
         case '2': playerScavenge(map, p, inv, zsys, zBuf, alive); break;
         case '3': playerRest(p, inv, zsys, zBuf, alive); break;
-        case 'm': case 'M': map.displayPrettyMap(p, zsys); break; 
+        case 'm': case 'M': map.displayVisualMap(p, zsys); break; 
         case 'g': case 'G': useGunOnZombies(p, inv, zsys, alive); break;
         case 'i': case 'I': inv.openMenu(p, map, zsys, alive); break;
         case 'k': case 'K': tryCarEscape(p, inv, won); break;
