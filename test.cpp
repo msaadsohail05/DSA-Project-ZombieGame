@@ -60,6 +60,13 @@ struct Player {
     int energyEffectMinutesLeft;
     int pillsEffectMinutesLeft;
 
+    int hp;  // 0-100
+    bool isPoisoned;
+    bool isScratched;
+
+    int scratchMinuteBuffer;  // accumulates minutes for scratched damage
+    int clothEffectMinutesLeft; // bandage: no HP loss while > 0
+    int adrenalineMovesLeft;   //number of upcoming moves that are faster
 };
 
 // =====================================================
@@ -470,7 +477,7 @@ public:
     }
 
     // ---------- PLAYER MOVE (1 hour = 60 min) ----------
-    bool movePlayer(Player& player, Location dest, MoveLog& log) {
+    bool movePlayer(Player& player, Location dest, MoveLog& log, int moveCost) {
         if (!isConnected(player.currentLocation, dest)) {
             cout << "You cannot move from "
                 << locationToString(player.currentLocation)
@@ -483,10 +490,10 @@ public:
         log.push(player.currentLocation, player.timeMinutes);
 
         player.currentLocation = dest;
-        player.timeMinutes += 60;
+        player.timeMinutes += moveCost;
 
         cout << "\n[Move] You moved to " << locationToString(dest)
-            << ". +60 minutes.\n";
+            << ". +" << moveCost << " minutes.\n";
         cout << "Total time: " << player.timeMinutes
             << " minutes | Stamina: " << player.stamina << "\n\n";
 
@@ -743,6 +750,25 @@ public:
             }
         }
     }
+    void moveHordesToward(Location target) {
+        cout << "[Scent] Zombies catch your scent and move toward "
+            << locationToString(target) << " if possible.\n";
+
+        for (auto& zombie : hordes) {
+            if (zombie.currentLocation == target) continue; // already there
+
+            Node* temp = map->getNeighbors(zombie.currentLocation);
+            while (temp) {
+                if ((Location)temp->vertex == target) {
+                    zombie.currentLocation = target;
+                    zombie.infectionRate += 5;
+                    cout << "  [Horde " << zombie.id << "] rushes to your location!\n";
+                    break;
+                }
+                temp = temp->next;
+            }
+        }
+    }
 
 private:
     void moveHordeOneStep(ZombieHorde& zombie) {
@@ -793,6 +819,35 @@ void advanceZombies(ZombieSystem& zsys, int& zombieMinuteBuffer, int deltaMinute
     while (zombieMinuteBuffer >= 60) {
         zsys.simulateHour();
         zombieMinuteBuffer -= 60;
+    }
+}
+
+void applyTimeToPlayer(Player& player, int deltaMinutes, bool& playerAlive) {
+    // Decrease timers (energy, pills, cloth bandage)
+    auto dec = [&](int& t) {
+        if (t > 0) {
+            t -= deltaMinutes;
+            if (t < 0) t = 0;
+        }
+        };
+
+    dec(player.energyEffectMinutesLeft);
+    dec(player.pillsEffectMinutesLeft);
+    dec(player.clothEffectMinutesLeft);
+
+    // SCRATCHED: lose 5 HP every full hour (if not bandaged)
+    player.scratchMinuteBuffer += deltaMinutes;
+    while (player.scratchMinuteBuffer >= 60) {
+        player.scratchMinuteBuffer -= 60;
+        if (player.isScratched && player.clothEffectMinutesLeft <= 0) {
+            player.hp -= 5;
+            cout << "[Status] Your scratches hurt. -5 HP\n";
+        }
+    }
+
+    if (player.hp <= 0) {
+        cout << "[Status] You succumb to your injuries...\n";
+        playerAlive = false;
     }
 }
 
@@ -851,8 +906,7 @@ void useEnergyDrink(Player& player, Inventory& inv, bool& playerAlive) {
 // =====================================================
 
 // Move: costs 1 hour (handled by movePlayer)
-void playerMove(MapGraph& map, Player& player, MoveLog& log,
-    ZombieSystem& zsys, int& zombieMinuteBuffer) {
+void playerMove(MapGraph& map, Player& player, MoveLog& log,ZombieSystem& zsys, int& zombieMinuteBuffer,Inventory& inv, bool& playerAlive) {
     cout << "\nYou are at: " << locationToString(player.currentLocation) << "\n";
     cout << "You can move to:\n";
 
@@ -881,29 +935,65 @@ void playerMove(MapGraph& map, Player& player, MoveLog& log,
         return;
     }
 
-    // movePlayer already adds +60 minutes
-    bool ok = map.movePlayer(player, options[choice - 1], log);
-    if (ok) {
-        advanceZombies(zsys, zombieMinuteBuffer, 60); // 1 hour for zombies
+    // ---- compute movement cost (60 base) ----
+    int moveCost = 60;
 
-        if (player.energyEffectMinutesLeft > 0) {
-            player.energyEffectMinutesLeft -= 60;
-            if (player.energyEffectMinutesLeft < 0)
-                player.energyEffectMinutesLeft = 0;
+    // Encumbered: inventory full -> +50% time
+    if (inv.isFull()) {
+        moveCost = moveCost + moveCost / 2; // 60 -> 90
+        cout << "[Status] Encumbered: full inventory slows you down.\n";
+    }
+
+    // Poisoned: +50% time
+    if (player.isPoisoned) {
+        moveCost = moveCost + moveCost / 2;
+        cout << "[Status] Poisoned: moving slower.\n";
+    }
+
+    // Adrenaline: 30% chance when HP < 50 to activate for next 2 moves
+    if (player.hp < 50 && player.adrenalineMovesLeft == 0) {
+        int roll = rand() % 100;
+        if (roll < 30) {
+            cout << "[Adrenaline] You feel a sudden rush! Next 2 moves will be faster.\n";
+            player.adrenalineMovesLeft = 2;
+        }
+    }
+
+    // If adrenaline active, halve time cost (min 15 minutes)
+    if (player.adrenalineMovesLeft > 0) {
+        moveCost /= 2;
+        if (moveCost < 15) moveCost = 15;
+        player.adrenalineMovesLeft--;
+        cout << "[Adrenaline] This move is faster! Cost: " << moveCost << " minutes.\n";
+    }
+
+    // ---------- perform move ----------
+    bool ok = map.movePlayer(player, options[choice - 1], log, moveCost);
+    if (ok) {
+        // Scent: 5% chance zombies move directly to you
+        int scentRoll = rand() % 100;
+        if (scentRoll < 5) {
+            zsys.moveHordesToward(player.currentLocation);
         }
 
-        if (player.pillsEffectMinutesLeft > 0) {
-            player.pillsEffectMinutesLeft -= 60;
-            if (player.pillsEffectMinutesLeft < 0)
-                player.pillsEffectMinutesLeft = 0;
+        advanceZombies(zsys, zombieMinuteBuffer, moveCost);
+        applyTimeToPlayer(player, moveCost, playerAlive);
+
+        // POISONED: -5 HP every turn (action), if not bandaged
+        if (player.isPoisoned && player.clothEffectMinutesLeft <= 0) {
+            player.hp -= 5;
+            cout << "[Poison] You feel sick. -5 HP.\n";
+            if (player.hp <= 0) {
+                cout << "[Poison] You succumb to the poison...\n";
+                playerAlive = false;
+            }
         }
     }
 }
 
 // Scavenge: costs 30 minutes, random item / nothing,
 // inventory rules: if full → Swap or Leave
-void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
-    ZombieSystem& zsys, int& zombieMinuteBuffer) {
+void playerScavenge(MapGraph& map, Player& player, Inventory& inv,ZombieSystem& zsys, int& zombieMinuteBuffer, bool &playerAlive) {
     cout << "\n[Scavenge] You search the area at "
         << locationToString(player.currentLocation) << "...\n";
 
@@ -912,17 +1002,16 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
         << " minutes | Stamina: " << player.stamina << "\n";
 
     advanceZombies(zsys, zombieMinuteBuffer, 30);
+    applyTimeToPlayer(player, 30, playerAlive);
 
-    if (player.energyEffectMinutesLeft > 0) {
-        player.energyEffectMinutesLeft -= 30;
-        if (player.energyEffectMinutesLeft < 0)
-            player.energyEffectMinutesLeft = 0;
-    }
-
-    if (player.pillsEffectMinutesLeft > 0) {
-        player.pillsEffectMinutesLeft -= 30;
-        if (player.pillsEffectMinutesLeft < 0)
-            player.pillsEffectMinutesLeft = 0;
+    // POISONED: -5 HP each turn (action)
+    if (player.isPoisoned && player.clothEffectMinutesLeft <= 0) {
+        player.hp -= 5;
+        cout << "[Poison] You feel sick. -5 HP.\n";
+        if (player.hp <= 0) {
+            cout << "[Poison] You succumb to the poison...\n";
+            playerAlive = false;
+        }
     }
 
     ItemProb* found = map.scavenge(player.currentLocation);
@@ -999,21 +1088,20 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv,
 }
 
 // Rest: restores stamina, costs 1 hour
-void playerRest(Player& player, ZombieSystem& zsys, int& zombieMinuteBuffer) {
+void playerRest(Player& player, ZombieSystem& zsys, int& zombieMinuteBuffer,bool &playerAlive) {
     cout << "\n[Rest] You take some time to rest...\n";
     player.timeMinutes += 60;
     advanceZombies(zsys, zombieMinuteBuffer, 60);
+    applyTimeToPlayer(player, 60, playerAlive);
 
-    if (player.energyEffectMinutesLeft > 0) {
-        player.energyEffectMinutesLeft -= 60;
-        if (player.energyEffectMinutesLeft < 0)
-            player.energyEffectMinutesLeft = 0;
-    }
-
-    if (player.pillsEffectMinutesLeft > 0) {
-        player.pillsEffectMinutesLeft -= 60;
-        if (player.pillsEffectMinutesLeft < 0)
-            player.pillsEffectMinutesLeft = 0;
+    // POISONED: -5 HP each turn (action)
+    if (player.isPoisoned && player.clothEffectMinutesLeft <= 0) {
+        player.hp -= 5;
+        cout << "[Poison] You feel sick. -5 HP.\n";
+        if (player.hp <= 0) {
+            cout << "[Poison] You succumb to the poison...\n";
+            playerAlive = false;
+        }
     }
 
     // simple rule: +30 stamina up to 100
@@ -1085,6 +1173,28 @@ void usePills(Player& player, Inventory& inv, bool& playerAlive) {
         }
     }
 }
+
+
+// Cloth:
+//  - If bleeding or scratched -> removes those conditions
+//  - If nothing is wrong -> just prints a message and still consumes (or you can change it)
+void useCloth(Player& player, Inventory& inv) {
+    if (!inv.consumeOne("Cloth")) {
+        cout << "[Cloth] You don't have any Cloth.\n";
+        return;
+    }
+
+    if (!player.isScratched && !player.isPoisoned) {
+        cout << "[Cloth] You clean yourself, but you had no open wounds or poison effects.\n";
+        return;
+    }
+
+    player.clothEffectMinutesLeft = 120; // bandage duration ~ 2 hours
+
+    cout << "[Cloth] You bandage and clean your wounds.\n";
+    cout << "        For the next 120 minutes, scratches/poison won't reduce HP.\n";
+}
+
 
 void useAxeOnBridge(MapGraph& map, Player& player, Inventory& inv) {
     // Must be at Bridge to use Axe
@@ -1195,8 +1305,15 @@ int main() {
     player.currentLocation = TOWN_HALL;
     player.timeMinutes = 0;
     player.stamina = 100;
-    player.energyEffectMinutesLeft = 0;   // no active drink at the start
-    player.pillsEffectMinutesLeft = 0; 
+    player.energyEffectMinutesLeft = 0;
+    player.pillsEffectMinutesLeft = 0;
+
+    player.hp = 100;
+    player.isScratched = false;
+    player.isPoisoned = false;
+    player.scratchMinuteBuffer = 0;
+    player.clothEffectMinutesLeft = 0;
+    player.adrenalineMovesLeft = 0;
 
     bool playerAlive = true;
 
@@ -1209,14 +1326,26 @@ int main() {
         cout << "Location: " << locationToString(player.currentLocation) << "\n";
         cout << "Time: " << player.timeMinutes << " minutes\n";
         cout << "Stamina: " << player.stamina << "\n";
+        cout << "HP: " << player.hp << "\n";
         cout << "Inventory: " << inventory.getUsedSlots()
             << "/" << inventory.getCapacity() << " slots used\n";
+
+        if (player.isScratched) {
+            cout << "Status: SCRATCHED (HP -5 per hour)\n";
+        }
+        if (player.isPoisoned) {
+            cout << "Status: POISONED (slow + HP -5 per turn)\n";
+        }
+        if (inventory.isFull()) {
+            cout << "Status: ENCUMBERED (full inventory slows movement)\n";
+        }
         cout << "====================================\n";
         cout << "Choose action:\n";
         cout << "1. Move       (costs 1 hour)\n";
         cout << "2. Scavenge   (costs 30 minutes)\n";
         cout << "3. Rest       (costs 1 hour, restores stamina)\n";
         cout << "a. Use an axe on Bridge barricade (no time cost)\n";
+        cout << "c. Use cloth (no time costs)\n";
         cout << "e. Drink energy drink (no time cost)\n";
         cout << "j. Use junk on this node (no time cost)\n";
         cout << "g. Use gun on nearby zombies (no time cost)\n";
@@ -1229,21 +1358,26 @@ int main() {
 
         switch (choice) {
         case '1':
-            playerMove(map, player, moveLog, zsys, zombieMinuteBuffer);
+            playerMove(map, player, moveLog, zsys, zombieMinuteBuffer, inventory, playerAlive);
             break;
         case '2':
-            playerScavenge(map, player, inventory, zsys, zombieMinuteBuffer);
+            playerScavenge(map, player, inventory, zsys, zombieMinuteBuffer,playerAlive);
             break;
         case '3':
-            playerRest(player, zsys, zombieMinuteBuffer);
+            playerRest(player, zsys, zombieMinuteBuffer, playerAlive);
             break;
         case 'a':
         case 'A':
             useAxeOnBridge(map, player, inventory);
             break;
+        case 'c':
+        case 'C':
+            useCloth(player, inventory);
+            break;
         case 'e':
         case 'E':
             useEnergyDrink(player, inventory, playerAlive);
+            break;
         case 'j':
         case 'J':
             useJunkAtCurrentNode(player, inventory, zsys);
