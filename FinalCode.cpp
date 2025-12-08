@@ -634,8 +634,8 @@ private:
     }
 
     void initItemProbabilities() {
-        addItem(HOME, "Bread", 30); addItem(HOME, "Pills", 20); addItem(HOME, "Apple", 20);
-        addItem(HOME, "User ID", 15); addItem(HOME, "Car Keys", 5);
+        addItem(HOME, "Bread", 25); addItem(HOME, "Pills", 15); addItem(HOME, "Apple", 15);
+        addItem(HOME, "User ID", 35); addItem(HOME, "Car Keys", 2);
         addItem(PETROL_STATION, "Petrol", 60); addItem(PETROL_STATION, "Petrol", 60); addItem(PETROL_STATION, "Petrol", 60); 
         addItem(PETROL_STATION, "Cloth", 20); addItem(PETROL_STATION, "Junk", 10);
         addItem(PARK, "Apple", 25); addItem(PARK, "Energy Drink", 15); addItem(PARK, "Twig", 15); addItem(PARK, "Pebble", 35);
