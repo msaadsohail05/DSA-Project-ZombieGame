@@ -1041,7 +1041,7 @@ void playerScavenge(MapGraph& map, Player& player, Inventory& inv, ZombieSystem&
     
     // 15% Chance to get Scratched
     if (!player.isScratched) {
-        if (rand() % 100 < 15) {
+        if (rand() % 100 < 10) {
             player.isScratched = true;
             cout << ">> [OUCH!] Cut your hand! You are SCRATCHED (-5 HP/hr).\n";
         }
